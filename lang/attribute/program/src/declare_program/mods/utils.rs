@@ -1,9 +1,11 @@
 use anchor_lang_idl::types::Idl;
+use heck::CamelCase;
 use quote::{format_ident, quote};
 
 pub fn gen_utils_mod(idl: &Idl) -> proc_macro2::TokenStream {
     let account = gen_account(idl);
     let event = gen_event(idl);
+    let instructions = gen_instructions(idl);
 
     quote! {
         /// Program utilities.
@@ -12,6 +14,7 @@ pub fn gen_utils_mod(idl: &Idl) -> proc_macro2::TokenStream {
 
             #account
             #event
+            #instructions
         }
     }
 }
@@ -95,9 +98,66 @@ fn gen_event(idl: &Idl) -> proc_macro2::TokenStream {
             pub fn try_from_bytes(bytes: &[u8]) -> Result<Self> {
                 Self::try_from(bytes)
             }
+
+            pub fn try_from_slice(bytes: &[u8]) -> Result<Self> {
+                Self::try_from(bytes)
+            }
         }
 
         impl TryFrom<&[u8]> for Event {
+            type Error = anchor_lang::error::Error;
+
+            fn try_from(value: &[u8]) -> Result<Self> {
+                #(#if_statements)*
+                Err(ProgramError::InvalidArgument.into())
+            }
+        }
+    }
+}
+
+fn gen_instructions(idl: &Idl) -> proc_macro2::TokenStream {
+    let variants = idl.instructions.iter().map(|ix| {
+        let variant_name = format_ident!("{}", ix.name.to_camel_case());
+        let struct_name = format_ident!("{}", ix.name.to_camel_case());
+        quote! { #variant_name(super::internal::args::#struct_name) }
+    });
+
+    let if_statements = idl.instructions.iter().map(|ix| {
+        let variant_name = format_ident!("{}", ix.name.to_camel_case());
+        let struct_name = format_ident!("{}", ix.name.to_camel_case());
+        quote! {
+            if value.starts_with(super::internal::args::#struct_name::DISCRIMINATOR) {
+                return super::internal::args::#struct_name::try_from_slice(
+                    &value[super::internal::args::#struct_name::DISCRIMINATOR.len()..]
+                )
+                .map(Self::#variant_name)
+                .map_err(Into::into)
+            }
+        }
+    });
+
+    quote! {
+        /// An enum that includes all instruction of the declared program as a tuple variant.
+        ///
+        /// See [`Self::try_from_bytes`] to create an instance from bytes.
+        pub enum InstructionUnion {
+            #(#variants,)*
+        }
+
+        impl InstructionUnion {
+            /// Try to create an instruction based on the given bytes.
+            ///
+            /// This method returns an error if the discriminator of the given bytes don't match
+            /// with any of the existing instruction, or if the deserialization fails.
+            pub fn try_from_bytes(bytes: &[u8]) -> Result<Self> {
+                Self::try_from(bytes)
+            }
+            pub fn try_from_slice(bytes: &[u8]) -> Result<Self> {
+                Self::try_from(bytes)
+            }
+        }
+
+        impl TryFrom<&[u8]> for InstructionUnion {
             type Error = anchor_lang::error::Error;
 
             fn try_from(value: &[u8]) -> Result<Self> {
