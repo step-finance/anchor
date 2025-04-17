@@ -68,14 +68,23 @@ fn gen_internal_args_mod(idl: &Idl) -> proc_macro2::TokenStream {
             }
         };
 
+        let impl_try_from_slice_unchecked = quote! {
+            impl #ix_struct_name {
+                pub fn try_from_slice_unchecked(data: &[u8]) -> Result<Self> {
+                    try_from_slice_unchecked::<Self>(data)
+                }
+            }
+        };
+
         quote! {
             /// Instruction argument
-            #[derive(AnchorSerialize, AnchorDeserialize)]
+            #[derive(AnchorSerialize, AnchorDeserialize, Debug)]
             #ix_struct
 
             #impl_discriminator
             #impl_ix_data
             #impl_owner
+            #impl_try_from_slice_unchecked
         }
     });
 
@@ -87,6 +96,15 @@ fn gen_internal_args_mod(idl: &Idl) -> proc_macro2::TokenStream {
         /// client.
         pub mod args {
             use super::*;
+            use anchor_lang::prelude::*;
+            use borsh::BorshDeserialize;
+            /// Deserializes without checking that the entire slice has been consumed.
+            pub fn try_from_slice_unchecked<T: BorshDeserialize>(
+                data: &[u8],
+            ) -> Result<T> {
+                let mut data_mut = data;
+                T::deserialize(&mut data_mut).map_err(Into::into)
+            }
 
             #(#ixs)*
         }
@@ -203,7 +221,7 @@ fn gen_internal_accounts_common(
             });
 
             quote! {
-                #[derive(Accounts)]
+                #[derive(Accounts, Debug)]
                 pub struct #ident #generics {
                     #(#accounts,)*
                 }

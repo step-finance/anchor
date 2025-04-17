@@ -127,7 +127,7 @@ fn gen_instructions(idl: &Idl) -> proc_macro2::TokenStream {
         let struct_name = format_ident!("{}", ix.name.to_camel_case());
         quote! {
             if value.starts_with(super::internal::args::#struct_name::DISCRIMINATOR) {
-                return super::internal::args::#struct_name::try_from_slice(
+                return super::internal::args::#struct_name::try_from_slice_unchecked(
                     &value[super::internal::args::#struct_name::DISCRIMINATOR.len()..]
                 )
                 .map(Self::#variant_name)
@@ -140,6 +140,7 @@ fn gen_instructions(idl: &Idl) -> proc_macro2::TokenStream {
         /// An enum that includes all instruction of the declared program as a tuple variant.
         ///
         /// See [`Self::try_from_bytes`] to create an instance from bytes.
+        #[derive(Debug)]
         pub enum InstructionUnion {
             #(#variants,)*
         }
